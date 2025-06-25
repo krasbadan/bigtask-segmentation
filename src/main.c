@@ -16,6 +16,7 @@ MST_node MST_node_init();
 MST_node* MST_find(MST_node* node);
 void MST_merge(MST_node* node1, MST_node* node2);
 void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat);
+void FilterComponents(int width, int height, MST_node* MST_mat, double MinimumArea);
 
 int main(int argc, char *argv[]){
     srand(time(NULL));
@@ -65,6 +66,9 @@ int main(int argc, char *argv[]){
     }
 
     FindComponents(width, height, mat, MST_mat);
+
+    // Paints black the largest area and all areas smaller than 0.01% of the image
+    FilterComponents(width, height, MST_mat, 0.0001);
 
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
@@ -180,11 +184,11 @@ void MST_merge(MST_node* node1, MST_node* node2){
 void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat){
     //* Neighborhood kernel 5x5
     float kernel[5][5] = {
-        {1, 1, 1, 1, 1},
+        {0, 1, 1, 1, 0},
         {1, 1, 1, 1, 1},
         {1, 1, 0, 1, 1},
         {1, 1, 1, 1, 1},
-        {1, 1, 1, 1, 1}
+        {0, 1, 1, 1, 0}
     };
     //*/
 
@@ -214,6 +218,36 @@ void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+void FilterComponents(int width, int height, MST_node* MST_mat, double MinimumArea){
+    const int totalPixels = width * height;
+    const int minPixelCount = (int)(totalPixels * MinimumArea);
+
+    MST_node* maxRoot = NULL;
+    int maxCount = 0;
+    
+    for(int y = 0; y < height; y++){
+        for(int x = 0; x < width; x++){
+            MST_node* root = MST_find(&MST_mat[y*width + x]);
+            if( root->count > maxCount ){
+                maxCount = root->count;
+                maxRoot = root;
+            }
+        }
+    }
+    
+    for(int y = 0; y < height; y++){
+        for(int x = 0; x < width; x++){
+            MST_node* root = MST_find(&MST_mat[y*width + x]);
+            
+            if( root == maxRoot || root->count < minPixelCount ){
+                root->R = 0;
+                root->G = 0;
+                root->B = 0;
             }
         }
     }
