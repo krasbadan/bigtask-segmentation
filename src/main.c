@@ -9,13 +9,13 @@ typedef struct MST_node{
     struct MST_node* parent;
 } MST_node;
 
-void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char mat[height][width]);
-void mat_to_img(int width, int height, unsigned char* img, unsigned char mat[height][width]);
+void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char* mat);
+void mat_to_img(int width, int height, unsigned char* img, unsigned char* mat);
 
 MST_node MST_node_init();
 MST_node* MST_find(MST_node* node);
 void MST_merge(MST_node* node1, MST_node* node2);
-void FindComponents(int width, int height, unsigned char  mat[height][width], MST_node MST_mat[height][width]);
+void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat);
 
 int main(int argc, char *argv[]){
     srand(time(NULL));
@@ -41,23 +41,34 @@ int main(int argc, char *argv[]){
         img[i] = img[i+1] = img[i+2] = avg;
     }
 
-    // Converting the image to 2D matrix, blurring the image by 2px and rounding it to 8 possible colors
-    unsigned char mat[height][width];
+    unsigned char* mat = (unsigned char*)malloc(height * width * sizeof(unsigned char));
+    if (!mat) {
+        printf("Memory allocation failed for mat\n");
+        free(img);
+        return 1;
+    }
+    
     MakeBlurredMatrix(width, height, img, mat);
 
-    // Finding similar areas
-    MST_node MST_mat[height][width];
+    MST_node* MST_mat = (MST_node*)malloc(height * width * sizeof(MST_node));
+    if (!MST_mat) {
+        printf("Memory allocation failed for MST_mat\n");
+        free(mat);
+        free(img);
+        return 1;
+    }
+    
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
-            MST_mat[y][x] = MST_node_init();
+            MST_mat[y*width + x] = MST_node_init();
         }
     }
+
     FindComponents(width, height, mat, MST_mat);
 
-    // Converting back to img
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
-            MST_node ptr = *MST_find(&MST_mat[y][x]);
+            MST_node ptr = *MST_find(&MST_mat[y*width + x]);
             int idx = (y*width + x) * 4;
             img[ idx ] = ptr.R;
             img[ idx + 1 ] = ptr.G;
@@ -69,15 +80,17 @@ int main(int argc, char *argv[]){
     error = lodepng_encode32_file(output_file, img, width, height);
     if( error ) printf("Error %u: %s\n", error, lodepng_error_text(error));
 
+    free(MST_mat);
+    free(mat);
     free(img);
     return 0;
 }
 
-void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char mat[height][width]){
+void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char* mat){
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
             int idx = (y * width + x) * 4;
-            mat[y][x] = img[idx];
+            mat[y*width + x] = img[idx];
         }
     }
 
@@ -111,7 +124,7 @@ void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char 
                     int nx = x + kx;
 
                     if( ny >= 0 && ny < height && nx >= 0 && nx < width ){
-                        sum += mat[ny][nx] * kernel[ky+radius][kx+radius];
+                        sum += mat[ny*width + nx] * kernel[ky+radius][kx+radius];
                     }
                     else{
                         ny = y + ky;
@@ -120,14 +133,14 @@ void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char 
                         if(ny >= height) ny = 2*height - ny - 2;
                         if(nx < 0) nx = -nx;
                         if(nx >= width) nx = 2*width - nx - 2;
-                        sum += mat[ny][nx] * kernel[ky+radius][kx+radius];
+                        sum += mat[ny*width + nx] * kernel[ky+radius][kx+radius];
                     }
                 }
             }
             int round = 32;
             unsigned char col = (unsigned char)sum;
             col /= round; col *= round; col += round - 1;
-            mat[y][x] = col;
+            mat[y*width + x] = col;
         }
     }
 }
@@ -164,7 +177,7 @@ void MST_merge(MST_node* node1, MST_node* node2){
     }
 }
 
-void FindComponents(int width, int height, unsigned char  mat[height][width], MST_node MST_mat[height][width]){
+void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat){
     //* Neighborhood kernel 5x5
     float kernel[5][5] = {
         {1, 1, 1, 1, 1},
@@ -186,7 +199,8 @@ void FindComponents(int width, int height, unsigned char  mat[height][width], MS
                         int nx = x + kx;
 
                         if( ny >= 0 && ny < height && nx >= 0 && nx < width ){
-                            if( mat[y][x] == mat[ny][nx] ) MST_merge( &(MST_mat[y][x]), &(MST_mat[ny][nx]) );
+                            if( mat[y*width + x] == mat[ny*width + nx] ) 
+                                MST_merge( &(MST_mat[y*width + x]), &(MST_mat[ny*width + nx]) );
                         }
                         else{
                             ny = y + ky;
@@ -195,7 +209,8 @@ void FindComponents(int width, int height, unsigned char  mat[height][width], MS
                             if(ny >= height) ny = 2*height - ny - 2;
                             if(nx < 0) nx = -nx;
                             if(nx >= width) nx = 2*width - nx - 2;
-                            if( mat[y][x] == mat[ny][nx] ) MST_merge( &(MST_mat[y][x]), &(MST_mat[ny][nx]) );
+                            if( mat[y*width + x] == mat[ny*width + nx] ) 
+                                MST_merge( &(MST_mat[y*width + x]), &(MST_mat[ny*width + nx]) );
                         }
                     }
                 }
