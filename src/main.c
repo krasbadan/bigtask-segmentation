@@ -1,11 +1,25 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include "lodepng.h"
 
-void Gauss(int width, int height, unsigned char* img, unsigned char mat[height][width]);
+typedef struct MST_node{
+    int count;
+    unsigned char R, G, B;
+    struct MST_node* parent;
+} MST_node;
+
+void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char mat[height][width]);
 void mat_to_img(int width, int height, unsigned char* img, unsigned char mat[height][width]);
 
+MST_node MST_node_init();
+MST_node* MST_find(MST_node* node);
+void MST_merge(MST_node* node1, MST_node* node2);
+void FindComponents(int width, int height, unsigned char  mat[height][width], MST_node MST_mat[height][width]);
+
 int main(int argc, char *argv[]){
+    srand(time(NULL));
+
     if(argc < 3){
         printf("Usage: %s input.png output.png\n", argv[0]);
         return 1;
@@ -20,18 +34,37 @@ int main(int argc, char *argv[]){
 
     error = lodepng_decode32_file(&img, &width, &height, input_file);
     if( error ){ printf("Error %u: %s\n", error, lodepng_error_text(error)); return 1; }
-    
+
     // BW
     for(int i = 0; i < width*height*4; i += 4){
         int avg = (img[i]+img[i+1]+img[i+2])/3;
-        // avg /= 32; avg *= 32; avg += 31;
         img[i] = img[i+1] = img[i+2] = avg;
     }
 
+    // Converting the image to 2D matrix, blurring the image by 2px and rounding it to 8 possible colors
     unsigned char mat[height][width];
-    Gauss(width, height, img, mat);
+    MakeBlurredMatrix(width, height, img, mat);
 
-    mat_to_img(width, height, img, mat);
+    // Finding similar areas
+    MST_node MST_mat[height][width];
+    for(int y = 0; y < height; y++){
+        for(int x = 0; x < width; x++){
+            MST_mat[y][x] = MST_node_init();
+        }
+    }
+    FindComponents(width, height, mat, MST_mat);
+
+    // Converting back to img
+    for(int y = 0; y < height; y++){
+        for(int x = 0; x < width; x++){
+            MST_node ptr = *MST_find(&MST_mat[y][x]);
+            int idx = (y*width + x) * 4;
+            img[ idx ] = ptr.R;
+            img[ idx + 1 ] = ptr.G;
+            img[ idx + 2 ] = ptr.B;
+            img[ idx + 3 ] = 255;
+        }
+    }
 
     error = lodepng_encode32_file(output_file, img, width, height);
     if( error ) printf("Error %u: %s\n", error, lodepng_error_text(error));
@@ -40,7 +73,7 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
-void Gauss(int width, int height, unsigned char* img, unsigned char mat[height][width]){
+void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char mat[height][width]){
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
             int idx = (y * width + x) * 4;
@@ -48,15 +81,15 @@ void Gauss(int width, int height, unsigned char* img, unsigned char mat[height][
         }
     }
 
-    /* Гауссово ядро 3х3 (радиус 1)
+    /* Gauss kernel 3x3
     float kernel[3][3] = {
-        {1.0/16.0, 2.0/16.0, 1.0/16.0},
-        {2.0/16.0, 4.0/16.0, 2.0/16.0},
-        {1.0/16.0, 2.0/16.0, 1.0/16.0}
+        {1.0/16, 2.0/16, 1.0/16},
+        {2.0/16, 4.0/16, 2.0/16},
+        {1.0/16, 2.0/16, 1.0/16}
     };
     //*/
 
-    //* Гауссово ядро 5х5 (радиус 2)
+    //* Gauss kernel 5x5
     float kernel[5][5] = {
         {1.0/256,  4.0/256,  6.0/256,  4.0/256, 1.0/256},
         {4.0/256, 16.0/256, 24.0/256, 16.0/256, 4.0/256},
@@ -66,19 +99,19 @@ void Gauss(int width, int height, unsigned char* img, unsigned char mat[height][
     };
     //*/
 
-    int A = 2;
+    int radius = 2;
 
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
             float sum = 0;
-            
-            for(int ky = -A; ky <= A; ky++){
-                for(int kx = -A; kx <= A; kx++){
+
+            for(int ky = -radius; ky <= radius; ky++){
+                for(int kx = -radius; kx <= radius; kx++){
                     int ny = y + ky;
                     int nx = x + kx;
-                    
+
                     if( ny >= 0 && ny < height && nx >= 0 && nx < width ){
-                        sum += mat[ny][nx] * kernel[ky+A][kx+A];
+                        sum += mat[ny][nx] * kernel[ky+radius][kx+radius];
                     }
                     else{
                         ny = y + ky;
@@ -87,26 +120,86 @@ void Gauss(int width, int height, unsigned char* img, unsigned char mat[height][
                         if(ny >= height) ny = 2*height - ny - 2;
                         if(nx < 0) nx = -nx;
                         if(nx >= width) nx = 2*width - nx - 2;
-                        sum += mat[ny][nx] * kernel[ky+A][kx+A];
+                        sum += mat[ny][nx] * kernel[ky+radius][kx+radius];
                     }
                 }
             }
-            
-            mat[y][x] = (char)(sum + 0.5);
+            int round = 32;
+            unsigned char col = (unsigned char)sum;
+            col /= round; col *= round; col += round - 1;
+            mat[y][x] = col;
         }
     }
 }
 
-void mat_to_img(int width, int height, unsigned char* img, unsigned char mat[height][width]){
-    for(int i = 0; i < width*height*4; i++){
-        if( i%4 == 3 ) continue;
-        int y = (i/4)/width;
-        int x = (i/4) - y*width;
+MST_node MST_node_init(){
+    MST_node new;
+    new.count = 1;
+    new.parent = NULL;
+    new.R = rand() % 255;
+    new.G = rand() % 255;
+    new.B = rand() % 255;
+    return new;
+}
 
-        // Color rounds up
-        int round = 32;
-        int col = mat[y][x];
-        col /= round; col *= round; col += round-1;
-        img[i] = col;
+MST_node* MST_find(MST_node* node){
+    if( node->parent == NULL ) return node;
+    
+    node->parent = MST_find(node->parent);
+    return node->parent;
+}
+
+void MST_merge(MST_node* node1, MST_node* node2){
+    MST_node* root1 = MST_find(node1);
+    MST_node* root2 = MST_find(node2);
+
+    if( root1 == root2 ) return;
+
+    if( root1->count < root2->count ){
+        root1->parent = root2;
+        root2->count += root1->count;
+    }else{
+        root2->parent = root1;
+        root1->count += root2->count;
+    }
+}
+
+void FindComponents(int width, int height, unsigned char  mat[height][width], MST_node MST_mat[height][width]){
+    //* Neighborhood kernel 5x5
+    float kernel[5][5] = {
+        {1, 1, 1, 1, 1},
+        {1, 1, 1, 1, 1},
+        {1, 1, 0, 1, 1},
+        {1, 1, 1, 1, 1},
+        {1, 1, 1, 1, 1}
+    };
+    //*/
+
+    int radius = 2;
+
+    for(int y = 0; y < height; y++){
+        for(int x = 0; x < width; x++){
+            for(int ky = -radius; ky <= radius; ky++){
+                for(int kx = -radius; kx <= radius; kx++){
+                    if( kernel[ky+radius][kx+radius] ){
+                        int ny = y + ky;
+                        int nx = x + kx;
+
+                        if( ny >= 0 && ny < height && nx >= 0 && nx < width ){
+                            if( mat[y][x] == mat[ny][nx] ) MST_merge( &(MST_mat[y][x]), &(MST_mat[ny][nx]) );
+                        }
+                        else{
+                            ny = y + ky;
+                            nx = x + kx;
+                            if(ny < 0) ny = -ny;
+                            if(ny >= height) ny = 2*height - ny - 2;
+                            if(nx < 0) nx = -nx;
+                            if(nx >= width) nx = 2*width - nx - 2;
+                            if( mat[y][x] == mat[ny][nx] ) MST_merge( &(MST_mat[y][x]), &(MST_mat[ny][nx]) );
+                        }
+                    }
+                }
+            }
+        }
     }
 }
