@@ -3,20 +3,20 @@
 #include <time.h>
 #include "lodepng.h"
 
-typedef struct MST_node{
+typedef struct DSU_node{
     int count;
     unsigned char R, G, B;
-    struct MST_node* parent;
-} MST_node;
+    struct DSU_node* parent;
+} DSU_node;
 
 void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char* mat);
 void mat_to_img(int width, int height, unsigned char* img, unsigned char* mat);
 
-MST_node MST_node_init();
-MST_node* MST_find(MST_node* node);
-void MST_merge(MST_node* node1, MST_node* node2);
-void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat);
-void FilterComponents(int width, int height, MST_node* MST_mat, double MinimumArea);
+DSU_node DSU_node_init();
+DSU_node* DSU_find(DSU_node* node);
+void DSU_merge(DSU_node* node1, DSU_node* node2);
+void FindComponents(int width, int height, unsigned char* mat, DSU_node* DSU_mat);
+void FilterComponents(int width, int height, DSU_node* DSU_mat, double MinimumArea);
 
 int main(int argc, char *argv[]){
     srand(time(NULL));
@@ -51,9 +51,9 @@ int main(int argc, char *argv[]){
     
     MakeBlurredMatrix(width, height, img, mat);
 
-    MST_node* MST_mat = (MST_node*)malloc(height * width * sizeof(MST_node));
-    if (!MST_mat) {
-        printf("Memory allocation failed for MST_mat\n");
+    DSU_node* DSU_mat = (DSU_node*)malloc(height * width * sizeof(DSU_node));
+    if (!DSU_mat) {
+        printf("Memory allocation failed for DSU_mat\n");
         free(mat);
         free(img);
         return 1;
@@ -61,18 +61,18 @@ int main(int argc, char *argv[]){
     
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
-            MST_mat[y*width + x] = MST_node_init();
+            DSU_mat[y*width + x] = DSU_node_init();
         }
     }
 
-    FindComponents(width, height, mat, MST_mat);
+    FindComponents(width, height, mat, DSU_mat);
 
     // Paints black the largest area and all areas smaller than 0.01% of the image
-    FilterComponents(width, height, MST_mat, 0.0001);
+    FilterComponents(width, height, DSU_mat, 0.0001);
 
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
-            MST_node ptr = *MST_find(&MST_mat[y*width + x]);
+            DSU_node ptr = *DSU_find(&DSU_mat[y*width + x]);
             int idx = (y*width + x) * 4;
             img[ idx ] = ptr.R;
             img[ idx + 1 ] = ptr.G;
@@ -84,7 +84,7 @@ int main(int argc, char *argv[]){
     error = lodepng_encode32_file(output_file, img, width, height);
     if( error ) printf("Error %u: %s\n", error, lodepng_error_text(error));
 
-    free(MST_mat);
+    free(DSU_mat);
     free(mat);
     free(img);
     return 0;
@@ -149,8 +149,8 @@ void MakeBlurredMatrix(int width, int height, unsigned char* img, unsigned char*
     }
 }
 
-MST_node MST_node_init(){
-    MST_node new;
+DSU_node DSU_node_init(){
+    DSU_node new;
     new.count = 1;
     new.parent = NULL;
     new.R = rand() % 255;
@@ -159,16 +159,16 @@ MST_node MST_node_init(){
     return new;
 }
 
-MST_node* MST_find(MST_node* node){
+DSU_node* DSU_find(DSU_node* node){
     if( node->parent == NULL ) return node;
     
-    node->parent = MST_find(node->parent);
+    node->parent = DSU_find(node->parent);
     return node->parent;
 }
 
-void MST_merge(MST_node* node1, MST_node* node2){
-    MST_node* root1 = MST_find(node1);
-    MST_node* root2 = MST_find(node2);
+void DSU_merge(DSU_node* node1, DSU_node* node2){
+    DSU_node* root1 = DSU_find(node1);
+    DSU_node* root2 = DSU_find(node2);
 
     if( root1 == root2 ) return;
 
@@ -181,7 +181,7 @@ void MST_merge(MST_node* node1, MST_node* node2){
     }
 }
 
-void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat){
+void FindComponents(int width, int height, unsigned char* mat, DSU_node* DSU_mat){
     //* Neighborhood kernel 5x5
     float kernel[5][5] = {
         {0, 1, 1, 1, 0},
@@ -204,7 +204,7 @@ void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat
 
                         if( ny >= 0 && ny < height && nx >= 0 && nx < width ){
                             if( mat[y*width + x] == mat[ny*width + nx] ) 
-                                MST_merge( &(MST_mat[y*width + x]), &(MST_mat[ny*width + nx]) );
+                                DSU_merge( &(DSU_mat[y*width + x]), &(DSU_mat[ny*width + nx]) );
                         }
                         else{
                             ny = y + ky;
@@ -214,7 +214,7 @@ void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat
                             if(nx < 0) nx = -nx;
                             if(nx >= width) nx = 2*width - nx - 2;
                             if( mat[y*width + x] == mat[ny*width + nx] ) 
-                                MST_merge( &(MST_mat[y*width + x]), &(MST_mat[ny*width + nx]) );
+                                DSU_merge( &(DSU_mat[y*width + x]), &(DSU_mat[ny*width + nx]) );
                         }
                     }
                 }
@@ -223,16 +223,16 @@ void FindComponents(int width, int height, unsigned char* mat, MST_node* MST_mat
     }
 }
 
-void FilterComponents(int width, int height, MST_node* MST_mat, double MinimumArea){
+void FilterComponents(int width, int height, DSU_node* DSU_mat, double MinimumArea){
     const int totalPixels = width * height;
     const int minPixelCount = (int)(totalPixels * MinimumArea);
 
-    MST_node* maxRoot = NULL;
+    DSU_node* maxRoot = NULL;
     int maxCount = 0;
     
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
-            MST_node* root = MST_find(&MST_mat[y*width + x]);
+            DSU_node* root = DSU_find(&DSU_mat[y*width + x]);
             if( root->count > maxCount ){
                 maxCount = root->count;
                 maxRoot = root;
@@ -242,7 +242,7 @@ void FilterComponents(int width, int height, MST_node* MST_mat, double MinimumAr
     
     for(int y = 0; y < height; y++){
         for(int x = 0; x < width; x++){
-            MST_node* root = MST_find(&MST_mat[y*width + x]);
+            DSU_node* root = DSU_find(&DSU_mat[y*width + x]);
             
             if( root == maxRoot || root->count < minPixelCount ){
                 root->R = 0;
