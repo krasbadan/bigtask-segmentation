@@ -93,7 +93,7 @@ Here are a few examples demonstrating the program's output. The "output" images 
 1.  **Load Image**: Decodes the input PNG image using the included `lodepng` library.
 2.  **Grayscale**: Converts the image to grayscale.
 3.  **Blur**: Applies a 5x5 Gaussian blur to the grayscale image. The pixel values are then quantized.
-4.  **MST Components**: Builds a representation where each pixel is a node. Pixels with the same quantized color in a 5x5 neighborhood mask are merged into the same component using a Disjoint Set Union (DSU) structure. Each root of a DSU tree is assigned a random color.
+4.  **DSU Components**: Builds a representation where each pixel is a node. Pixels with the same quantized color in a 5x5 neighborhood mask are merged into the same component using a Disjoint Set Union (DSU) structure. Each root of a DSU tree is assigned a random color.
 5.  **Filter & Recolor**: 
     *   Identifies the component (root node) with the largest number of pixels.
     *   Colors all pixels belonging to this largest component black.
